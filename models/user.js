@@ -32,6 +32,9 @@ const userSchema=mongoose.Schema({
     points:{
         type:Number
     },
+    profilePic:{
+        type:String
+    },
 
     tasks:[
         {

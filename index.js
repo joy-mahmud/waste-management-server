@@ -11,6 +11,10 @@ const cors = require('cors')
 app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }))
 app.use(bodyParser.json())
+const cloudinary = require('cloudinary').v2;
+const multer = require('multer');
+const { CloudinaryStorage } = require('multer-storage-cloudinary');
+
 
 const jwt = require('jsonwebtoken')
 // const uri = `mongodb+srv://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@${process.env.DB_CLUSTER}/${process.env.DB_NAME}?retryWrites=true&w=majority`;
@@ -60,6 +64,61 @@ const generateSecretKey = () => {
 }
 
 const secretKey = generateSecretKey()
+
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_SECRET_KEY,
+});
+const storage = new CloudinaryStorage({
+    cloudinary: cloudinary,
+    params: {
+        folder: 'uploads', // Folder in Cloudinary
+        format: async (req, file) => 'jpg', // File format
+        public_id: (req, file) => Date.now(), // Unique name for the file
+    },
+});
+
+const upload = multer({ storage });
+
+// Upload Route
+app.post('/upload', upload.single('file'), async(req, res) => {
+    res.status(200).json({ url: req.file.path }); // Return the Cloudinary URL
+});
+
+app.post('/updateProfile', async(req,res)=>{
+    try {
+        console.log('update request')
+        const { userId, name, phone, address, holdingNo, profilePic } = req.body;
+
+        // Find the user by ID and update the specified fields
+        const updatedUser = await User.findByIdAndUpdate(
+            userId, // Find user by userId
+            { 
+                $set: { // Update these fields
+                    name,
+                    phone,
+                    address,
+                    holdingNo,
+                    profilePic
+                }
+            },
+            { new: true } // Return the updated user document
+        );
+
+        // Check if the user was found and updated
+        if (!updatedUser) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+
+        // Respond with the updated user data
+        res.status(200).json({ message: 'User updated successfully', user: updatedUser });
+    } catch (error) {
+        console.error('Error updating user:', error);
+        res.status(500).json({ message: 'Failed to update user', error });
+    }
+
+})
 
 //api endpoints
 app.post('/register', async (req, res) => {
