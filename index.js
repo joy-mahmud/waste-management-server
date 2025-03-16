@@ -82,11 +82,11 @@ const storage = new CloudinaryStorage({
 const upload = multer({ storage });
 
 // Upload Route
-app.post('/upload', upload.single('file'), async(req, res) => {
+app.post('/upload', upload.single('file'), async (req, res) => {
     res.status(200).json({ url: req.file.path }); // Return the Cloudinary URL
 });
 
-app.post('/updateProfile', async(req,res)=>{
+app.post('/updateProfile', async (req, res) => {
     try {
         console.log('update request')
         const { userId, name, phone, address, holdingNo, profilePic } = req.body;
@@ -94,7 +94,7 @@ app.post('/updateProfile', async(req,res)=>{
         // Find the user by ID and update the specified fields
         const updatedUser = await User.findByIdAndUpdate(
             userId, // Find user by userId
-            { 
+            {
                 $set: { // Update these fields
                     name,
                     phone,
@@ -133,7 +133,7 @@ app.post('/register', async (req, res) => {
             return res.status(400).json({ message: 'Account already exists' })
         }
         //create a new user
-        const newUser = new User({ name, email, password: hashedPassword, phone,points:0, address, holdingNo, familyMember, usualWasteType })
+        const newUser = new User({ name, email, password: hashedPassword, phone, points: 0, address, holdingNo, familyMember, usualWasteType })
         //generate  a verification token
         //newUser.verificationToken = crypto.randomBytes(20).toString('hex')
         //save the user to database
@@ -199,7 +199,7 @@ app.post('/login', async (req, res) => {
         const token = jwt.sign({ userId: user._id }, secretKey)
         res.status(200).json(
             {
-                user:user,
+                user: user,
                 token: token
             }
         )
@@ -208,9 +208,9 @@ app.post('/login', async (req, res) => {
     }
 })
 //add task
-app.post('/addTask',async(req,res)=>{
+app.post('/addTask', async (req, res) => {
     try {
-        const { userId, wasteType, time, date, points,rulesFollow } = req.body;
+        const { userId, wasteType, time, date, points, rulesFollow } = req.body;
 
         // Validate input
         if (!userId || !wasteType) {
@@ -219,12 +219,12 @@ app.post('/addTask',async(req,res)=>{
 
         // Create a new task
         const newTask = new Task({
-            user:userId,
+            user: userId,
             wasteType,
             time,
             date,
             points,
-            rulesFollow:rulesFollow
+            rulesFollow: rulesFollow
         });
 
         // Save the task to the database
@@ -240,7 +240,7 @@ app.post('/addTask',async(req,res)=>{
         );
 
         // Respond with success
-        res.status(200).json({ 
+        res.status(200).json({
             message: 'Task added successfully.',
             task: savedTask,
             user: updatedUser
@@ -254,23 +254,149 @@ app.post('/addTask',async(req,res)=>{
 app.post('/earn-gift', async (req, res) => {
     console.log('gift request')
     try {
-      const { userId } = req.body;
-      if (!userId) {
-        return res.status(400).json({ message: 'User ID is required' });
-      }
-      const user = await User.findById(userId);
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
-      if (user.points < 500) {
-        return res.status(400).json({ message: 'Insufficient points' });
-      }
-      user.points -= 500;
+        const { userId } = req.body;
+        if (!userId) {
+            return res.status(400).json({ message: 'User ID is required' });
+        }
+        const user = await User.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: 'User not found' });
+        }
+        if (user.points < 500) {
+            return res.status(400).json({ message: 'Insufficient points' });
+        }
+        user.points -= 500;
         await user.save();
         console.log('gift request')
-      res.status(200).json({ message: 'Gift earn successfully', points: user.points });
+        res.status(200).json({ message: 'Gift earn successfully', points: user.points });
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: 'Failed to earn gift' });
+        console.error(error);
+        res.status(500).json({ message: 'Failed to earn gift' });
     }
-  });
+});
+
+//get all tasks 
+app.get('/tasks', async (req, res) => {
+    try {
+        let { page = 1, limit = 10 } = req.query; // Default: page 1, limit 10
+
+        page = parseInt(page);
+        limit = parseInt(limit);
+
+        if (isNaN(page) || isNaN(limit) || page < 1 || limit < 1) {
+            return res.status(400).json({ message: "Invalid pagination parameters" });
+        }
+
+        const totalTasks = await Task.countDocuments(); // Count total documents
+        const tasks = await Task.find()
+            .populate('user', 'name email phone') // Populating user details
+            .select('-__v') // Exclude __v field
+            .skip((page - 1) * limit) // Skip previous pages
+            .limit(limit); // Limit results per page
+
+        res.status(200).json({
+            totalTasks,
+            totalPages: Math.ceil(totalTasks / limit),
+            currentPage: page,
+            tasks,
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching tasks", error: error.message });
+    }
+});
+
+
+//get all users:
+// app.get('/users', async (req, res) => {
+//     try {
+//         const users = await User.find().select('-password').populate({
+//             path: 'tasks',
+//             options: { limit: 3 }, // Limit tasks per user
+//         }); // Populate tasks
+//         res.status(200).json(users);
+//     } catch (error) {
+//         res.status(500).json({ message: "Error fetching users", error: error.message });
+//     }
+// });
+
+//statistics
+app.get('/stats', async (req, res) => {
+    try {
+        // Calculate total sum of points
+        const totalPoints = await Task.aggregate([
+            { $group: { _id: null, totalPoints: { $sum: "$points" } } }
+        ]);
+
+        // Get total number of tasks
+        const totalTasks = await Task.countDocuments();
+        const biodegradableTasks = await Task.countDocuments({ wasteType: "biodegradable" })
+        const biodegradableWastePercentage = totalTasks > 0 ? Math.floor((biodegradableTasks / totalTasks) * 100) : 0
+
+        // Get total number of users
+        const totalUsers = await User.countDocuments();
+
+        // Get the 3 most recent users (sorted by _id descending)
+        const recentUsers = await User.find().sort({ _id: -1 }).limit(3).select('-password');
+
+        // Get the 3 most recent tasks (sorted by _id descending)
+        const recentTasks = await Task.find().sort({ _id: -1 }).limit(3).populate('user', 'name');
+
+        res.status(200).json({
+            totalPoints: totalPoints.length > 0 ? totalPoints[0].totalPoints : 0,
+            totalTasks,
+            biodegradableWastePercentage,
+            totalUsers,
+            recentUsers,
+            recentTasks
+        });
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching stats", error: error.message });
+    }
+});
+
+app.get('/users', async (req, res) => {
+    try {
+        const page = parseInt(req.query.page) || 1;  // Default to page 1
+        const limit = parseInt(req.query.limit) || 5; // Default limit 10 users
+        //const taskLimit = parseInt(req.query.taskLimit) || 5; // Limit tasks per user
+
+        const totalUsers = await User.countDocuments(); // Get total user count
+
+        const users = await User.find()
+            .select('-password') // Exclude password
+            .populate({
+                path: 'tasks',
+                options: { limit: 5 }, // Limit tasks per user
+            })
+            .skip((page - 1) * 5) // Skip for pagination
+            .limit(5); // Limit number of users per request
+
+        res.status(200).json({
+            totalUsers,
+            totalPages: Math.ceil(totalUsers / limit),
+            currentPage: page,
+            users,
+        });
+
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching users", error: error.message });
+    }
+});
+
+app.get('/user/tasks', async (req, res) => {
+    try {
+        const { userId } = req.query;
+
+        if (!userId) {
+            return res.status(400).json({ message: "User ID is required" });
+        }
+
+        // Fetch all tasks for the specific user
+        const tasks = await Task.find({ user: userId }).select('-__v');
+
+        res.status(200).json({ tasks });
+
+    } catch (error) {
+        res.status(500).json({ message: "Error fetching tasks", error: error.message });
+    }
+});
